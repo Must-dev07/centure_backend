@@ -15,12 +15,15 @@ RUN pip install --no-cache-dir -r requirements.txt
 
 COPY . .
 
+# Copy and prepare entrypoint BEFORE switching to non-root user,
+# so appuser has execute permission on it.
+COPY entrypoint.sh /entrypoint.sh
+RUN chmod +x /entrypoint.sh
+
 RUN useradd -m appuser && chown -R appuser /app
 USER appuser
 
 EXPOSE 8000
-COPY entrypoint.sh /entrypoint.sh
-RUN chmod +x /entrypoint.sh
 
 ENTRYPOINT ["/entrypoint.sh"]
-CMD ["gunicorn", "config.wsgi:application", "--bind", "0.0.0.0:8000", "--workers", "3", "--timeout", "60"]
+CMD ["sh", "-c", "gunicorn config.wsgi:application --bind 0.0.0.0:${PORT:-8000} --workers 3 --timeout 60"]
