@@ -17,8 +17,12 @@ def env_bool(name: str, default: str = "false") -> bool:
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "insecure-dev-only-key-do-not-use-in-prod")
 DEBUG = env_bool("DJANGO_DEBUG", "false")
-ALLOWED_HOSTS = os.environ.get("DJANGO_ALLOWED_HOSTS", "localhost,127.0.0.1").split(",")
+ 
 
+ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',') if os.environ.get('ALLOWED_HOSTS') else []
+
+# optional: always allow localhost for local dev
+ALLOWED_HOSTS += ['localhost', '127.0.0.1']
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
