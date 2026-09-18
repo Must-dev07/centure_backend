@@ -22,7 +22,7 @@ DEBUG = env_bool("DJANGO_DEBUG", "false")
 ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',') if os.environ.get('ALLOWED_HOSTS') else []
 
 # optional: always allow localhost for local dev
-ALLOWED_HOSTS += ['localhost', '127.0.0.1']
+ALLOWED_HOSTS += ['localhost', '127.0.0.1','centure-backend-3inq.onrender.com']
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
