@@ -1,14 +1,14 @@
 from rest_framework import serializers
 
 from babies.models import Baby
-from .models import Bracelet, Pairing
+from .models import belt, Pairing
 
 
-class BraceletSerializer(serializers.ModelSerializer):
+class beltSerializer(serializers.ModelSerializer):
     baby_name = serializers.CharField(source="baby.name", read_only=True, default=None)
 
     class Meta:
-        model = Bracelet
+        model = belt
         fields = [
             "id", "serial_number", "nickname", "firmware_version", "baby", "baby_name",
             "battery_level", "last_seen_at", "status", "created_at",
@@ -26,7 +26,7 @@ class PairingSerializer(serializers.ModelSerializer):
 
     class Meta:
         model = Pairing
-        fields = ["id", "bracelet", "baby", "baby_name", "paired_at", "unpaired_at"]
+        fields = ["id", "belt", "baby", "baby_name", "paired_at", "unpaired_at"]
 
 
 class PairRequestSerializer(serializers.Serializer):

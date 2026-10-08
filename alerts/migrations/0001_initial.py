@@ -15,7 +15,7 @@ class Migration(migrations.Migration):
             name='Alert',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('type', models.CharField(choices=[('high_temp', 'High Temp'), ('low_temp', 'Low Temp'), ('low_oxygen', 'Low Oxygen'), ('high_hr', 'High Hr'), ('low_hr', 'Low Hr'), ('no_movement', 'No Movement'), ('bracelet_removed', 'Bracelet Removed'), ('battery_low', 'Battery Low'), ('ble_lost', 'Ble Lost'), ('no_data', 'No Data')], max_length=24)),
+                ('type', models.CharField(choices=[('high_temp', 'High Temp'), ('low_temp', 'Low Temp'), ('low_oxygen', 'Low Oxygen'), ('high_hr', 'High Hr'), ('low_hr', 'Low Hr'), ('no_movement', 'No Movement'), ('belt_removed', 'belt Removed'), ('battery_low', 'Battery Low'), ('ble_lost', 'Ble Lost'), ('no_data', 'No Data')], max_length=24)),
                 ('severity', models.CharField(choices=[('info', 'Info'), ('warning', 'Warning'), ('critical', 'Critical')], max_length=10)),
                 ('message', models.CharField(max_length=255)),
                 ('value', models.FloatField(blank=True, null=True)),

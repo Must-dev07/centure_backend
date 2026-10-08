@@ -1,7 +1,12 @@
 """Baby CRUD, scoped by role:
-- parent: only their own babies (create allowed)
-- doctor: only babies assigned to them (read + limited update)
+- parent: only their own babies, read-only (babies are enrolled by staff)
+- doctor: only babies assigned to them (enroll + read + limited update)
 - admin: everything
+
+Enrollment (REFONTE §3.1): doctors/admins create babies with the parent's
+email. An existing parent account is linked directly; otherwise the baby is
+created without a parent and a pending Invitation is created (or reused), whose
+`app://invite/{token}` link is returned for the staff member to share.
 
 Doctor assignment (Section 3) is a real request/accept workflow, not a
 free-form field edit: parents request a doctor (DoctorAssignmentRequest,
@@ -10,17 +15,25 @@ pending), the doctor accepts or declines, and only acceptance changes
 doctors directly via PATCH; a doctor may remove *themselves* from a patient
 the same way. See `BabyDetailView.perform_update` for the enforcement.
 """
+from django.db import transaction
 from django.utils import timezone
-from rest_framework import generics, permissions
+from rest_framework import generics, permissions, status
 from rest_framework.exceptions import PermissionDenied, ValidationError
 from rest_framework.response import Response
 from rest_framework.views import APIView
 
-from common.permissions import IsParentOfBabyOrAssignedDoctorOrAdmin
+from common.permissions import IsParentOfBabyOrAssignedDoctorOrAdmin, ParentReadOnly
+from invitations.services import invitation_link, invite_parent_for_baby
+from users.models import Parent
 from notifications.models import Notification
 from notifications.utils import notify
 from .models import Baby, DoctorAssignmentRequest, MedicalHistoryEntry
-from .serializers import BabySerializer, DoctorAssignmentRequestSerializer, MedicalHistoryEntrySerializer
+from .serializers import (
+    BabyEnrollmentSerializer,
+    BabySerializer,
+    DoctorAssignmentRequestSerializer,
+    MedicalHistoryEntrySerializer,
+)
 
 
 def babies_for(user):
@@ -52,11 +65,31 @@ class BabyListCreateView(generics.ListCreateAPIView):
     def get_queryset(self):
         return babies_for(self.request.user).order_by("id")
 
-    def perform_create(self, serializer):
-        user = self.request.user
-        if user.role != "parent":
-            raise PermissionDenied("Only parents can register a baby.")
-        serializer.save(parent=user.parent_profile)
+    def create(self, request, *args, **kwargs):
+        user = request.user
+        if user.role not in ("doctor", "admin"):
+            raise PermissionDenied("Only doctors or admins can enroll a baby.")
+        serializer = BabyEnrollmentSerializer(data=request.data, context=self.get_serializer_context())
+        serializer.is_valid(raise_exception=True)
+        if user.role != "admin" and serializer.validated_data.get("assigned_doctor") is not None:
+            raise PermissionDenied("Only an admin can assign a doctor to a patient.")
+        email = serializer.validated_data.pop("parent_email")
+
+        with transaction.atomic():
+            parent = (
+                Parent.objects.select_related("user")
+                .filter(user__role="parent", user__email__iexact=email.strip())
+                .first()
+            )
+            baby = serializer.save(parent=parent, enrolled_by=user)
+            invitation = None
+            if parent is None:
+                invitation = invite_parent_for_baby(email=email, baby=baby, created_by=user)
+
+        data = BabySerializer(baby, context=self.get_serializer_context()).data
+        data["parent_status"] = "linked" if parent is not None else "invitation_pending"
+        data["invitation_link"] = invitation_link(invitation) if invitation is not None else None
+        return Response(data, status=status.HTTP_201_CREATED)
 
 
 class BabyDetailView(generics.RetrieveUpdateDestroyAPIView):
@@ -64,6 +97,7 @@ class BabyDetailView(generics.RetrieveUpdateDestroyAPIView):
     permission_classes = [
         permissions.IsAuthenticated,
         IsParentOfBabyOrAssignedDoctorOrAdmin,
+        ParentReadOnly,
     ]
 
     def get_queryset(self):
@@ -71,11 +105,13 @@ class BabyDetailView(generics.RetrieveUpdateDestroyAPIView):
 
     def perform_update(self, serializer):
         user = self.request.user
-        core_fields = {"name", "birth_date", "weight_grams", "gender"}
+        # The assigned doctor keeps the growth measurements (weight_grams,
+        # height_cm) and the enrollment fields up to date, but not identity.
+        core_fields = {"name", "birth_date", "gender"}
         if user.role == "doctor" and core_fields & set(serializer.validated_data):
             raise PermissionDenied(
-                "Doctors cannot edit a patient's registration details — "
-                "add a medical history entry instead."
+                "Doctors cannot edit a patient's identity details (name, birth "
+                "date, gender) — add a medical history entry instead."
             )
         if "assigned_doctor" in serializer.validated_data:
             new_doctor = serializer.validated_data["assigned_doctor"]
@@ -139,7 +175,7 @@ class DoctorRequestListCreateView(generics.ListCreateAPIView):
     def perform_create(self, serializer):
         user = self.request.user
         baby = self.get_baby()
-        if user.role == "parent" and baby.parent.user_id != user.id:
+        if user.role == "parent" and (baby.parent_id is None or baby.parent.user_id != user.id):
             raise PermissionDenied("Not your baby.")
         if user.role not in ("parent", "admin"):
             raise PermissionDenied("Only the parent or an admin can request a doctor.")
@@ -148,10 +184,13 @@ class DoctorRequestListCreateView(generics.ListCreateAPIView):
         request_obj = serializer.save(
             baby=baby, requested_by=user, status=DoctorAssignmentRequest.Status.PENDING
         )
+        # A baby enrolled before its parent accepted the invitation has no
+        # parent: name the requester (an admin) instead.
+        requester = baby.parent.user if baby.parent_id is not None else user
         notify(
             request_obj.doctor.user,
             "New patient request",
-            f"{baby.parent.user.get_full_name()} requested you as {baby.name}'s doctor.",
+            f"{requester.get_full_name()} requested you as {baby.name}'s doctor.",
             category=Notification.Category.MEDICAL,
         )
 
@@ -198,12 +237,13 @@ class DoctorRequestAcceptView(_DoctorRequestActionView):
         ).exclude(pk=req.pk).update(
             status=DoctorAssignmentRequest.Status.DECLINED, responded_at=timezone.now()
         )
-        notify(
-            req.baby.parent.user,
-            "Doctor request accepted",
-            f"Dr. {req.doctor.user.get_full_name()} accepted your request for {req.baby.name}.",
-            category=Notification.Category.MEDICAL,
-        )
+        if req.baby.parent_id is not None:
+            notify(
+                req.baby.parent.user,
+                "Doctor request accepted",
+                f"Dr. {req.doctor.user.get_full_name()} accepted your request for {req.baby.name}.",
+                category=Notification.Category.MEDICAL,
+            )
         return Response(DoctorAssignmentRequestSerializer(req).data)
 
 
@@ -215,12 +255,13 @@ class DoctorRequestDeclineView(_DoctorRequestActionView):
         req.status = DoctorAssignmentRequest.Status.DECLINED
         req.responded_at = timezone.now()
         req.save(update_fields=["status", "responded_at"])
-        notify(
-            req.baby.parent.user,
-            "Doctor request declined",
-            f"Dr. {req.doctor.user.get_full_name()} declined your request for {req.baby.name}.",
-            category=Notification.Category.MEDICAL,
-        )
+        if req.baby.parent_id is not None:
+            notify(
+                req.baby.parent.user,
+                "Doctor request declined",
+                f"Dr. {req.doctor.user.get_full_name()} declined your request for {req.baby.name}.",
+                category=Notification.Category.MEDICAL,
+            )
         return Response(DoctorAssignmentRequestSerializer(req).data)
 
 

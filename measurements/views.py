@@ -2,9 +2,9 @@
 
 Ingest path:
 1. validate payload(s)
-2. resolve baby from the bracelet's current pairing
-3. bulk-insert measurements, update bracelet last_seen/battery
-4. run CRITICAL rules synchronously (SpO2/HR)
+2. resolve baby from the belt's current pairing
+3. bulk-insert measurements, update belt last_seen/battery
+4. run CRITICAL rules synchronously (HR/respiration)
 5. queue non-critical rules on Celery
 """
 from datetime import timedelta
@@ -19,7 +19,7 @@ from rest_framework.views import APIView
 from analysis.rules import run_rules
 from analysis.tasks import evaluate_non_critical_rules
 from babies.views import babies_for
-from bracelets.views import bracelets_for
+from belts.views import belts_for
 from common.pagination import DefaultPagination
 from .models import Measurement
 from .serializers import (
@@ -55,38 +55,38 @@ class MeasurementIngestQueryView(APIView):
         serializer = MeasurementIngestSerializer(data=payload, many=True)
         serializer.is_valid(raise_exception=True)
 
-        allowed_bracelets = {b.id: b for b in bracelets_for(request.user).distinct()}
+        allowed_belts = {b.id: b for b in belts_for(request.user).distinct()}
         to_create, errors = [], []
-        touched_bracelets = {}
+        touched_belts = {}
         for item in serializer.validated_data:
-            bracelet = item["bracelet"]
-            if bracelet.id not in allowed_bracelets:
-                errors.append({"bracelet": bracelet.id, "detail": "Not your bracelet."})
+            belt = item["belt"]
+            if belt.id not in allowed_belts:
+                errors.append({"belt": belt.id, "detail": "Not your belt."})
                 continue
-            if bracelet.baby_id is None:
-                errors.append({"bracelet": bracelet.id, "detail": "Bracelet not paired."})
+            if belt.baby_id is None:
+                errors.append({"belt": belt.id, "detail": "belt not paired."})
                 continue
-            to_create.append(Measurement(baby_id=bracelet.baby_id, **item))
-            touched_bracelets[bracelet.id] = item
+            to_create.append(Measurement(baby_id=belt.baby_id, **item))
+            touched_belts[belt.id] = item
 
         if errors and not to_create:
             return Response({"errors": errors}, status=400)
 
         created = Measurement.objects.bulk_create(to_create)
 
-        # Update bracelet liveness/battery from the latest sample per bracelet.
+        # Update belt liveness/battery from the latest sample per belt.
         now = timezone.now()
-        for bid, item in touched_bracelets.items():
-            bracelet = allowed_bracelets[bid]
-            bracelet.last_seen_at = now
+        for bid, item in touched_belts.items():
+            belt = allowed_belts[bid]
+            belt.last_seen_at = now
             if item.get("battery") is not None:
-                bracelet.battery_level = item["battery"]
-            bracelet.save(update_fields=["last_seen_at", "battery_level"])
+                belt.battery_level = item["battery"]
+            belt.save(update_fields=["last_seen_at", "battery_level"])
             # Auto-resolve any open NO_DATA alert now that data flows again.
             from alerts.models import Alert
 
             Alert.objects.filter(
-                baby_id=bracelet.baby_id, type=Alert.Type.NO_DATA, resolved_at__isnull=True
+                baby_id=belt.baby_id, type=Alert.Type.NO_DATA, resolved_at__isnull=True
             ).update(resolved_at=now)
 
         # bulk_create with SQLite/Postgres returns objects with PKs — run rules.
@@ -135,19 +135,17 @@ class MeasurementIngestQueryView(APIView):
         for m in qs.iterator(chunk_size=1000):
             key = int(m.recorded_at.timestamp()) // seconds * seconds
             b = buckets.setdefault(
-                key, {"hr": [], "temp": [], "spo2": [], "battery": [], "movement": [], "count": 0}
+                key, {"hr": [], "temp": [], "resp": [], "battery": [], "count": 0}
             )
             b["count"] += 1
             if m.heart_rate is not None:
                 b["hr"].append(m.heart_rate)
             if m.temperature is not None:
                 b["temp"].append(m.temperature)
-            if m.spo2 is not None:
-                b["spo2"].append(m.spo2)
+            if m.respiratory_rate is not None:
+                b["resp"].append(m.respiratory_rate)
             if m.battery is not None:
                 b["battery"].append(m.battery)
-            if m.movement and m.movement.get("magnitude") is not None:
-                b["movement"].append(m.movement["magnitude"])
 
         def avg(xs):
             return round(sum(xs) / len(xs), 2) if xs else None
@@ -157,9 +155,8 @@ class MeasurementIngestQueryView(APIView):
                 "bucket": timezone.datetime.fromtimestamp(k, tz=timezone.get_current_timezone()),
                 "heart_rate_avg": avg(v["hr"]),
                 "temperature_avg": avg(v["temp"]),
-                "spo2_avg": avg(v["spo2"]),
+                "respiratory_rate_avg": avg(v["resp"]),
                 "battery_avg": avg(v["battery"]),
-                "movement_magnitude_avg": avg(v["movement"]),
                 "heart_rate_min": min(v["hr"]) if v["hr"] else None,
                 "heart_rate_max": max(v["hr"]) if v["hr"] else None,
                 "count": v["count"],

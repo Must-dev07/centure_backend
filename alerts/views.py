@@ -29,7 +29,7 @@ class AlertListView(generics.ListAPIView):
 
     def get_queryset(self):
         qs = Alert.objects.filter(baby__in=babies_for(self.request.user)).select_related(
-            "baby", "bracelet"
+            "baby", "belt"
         )
         baby_id = self.request.query_params.get("baby_id")
         if baby_id:
@@ -63,12 +63,16 @@ class AlertDetailView(generics.RetrieveAPIView):
 
 
 class AlertAcknowledgeView(APIView):
+    """Parent or assigned doctor. Admins supervise alerts read-only."""
+
     permission_classes = [permissions.IsAuthenticated]
 
     def post(self, request, pk):
         alert = generics.get_object_or_404(
             Alert.objects.filter(baby__in=babies_for(request.user)), pk=pk
         )
+        if request.user.role == "admin":
+            raise PermissionDenied("Admins can view alerts but only the doctor can treat them.")
         alert.acknowledged_by = request.user
         alert.acknowledged_at = timezone.now()
         update_fields = ["acknowledged_by", "acknowledged_at"]
@@ -81,8 +85,8 @@ class AlertAcknowledgeView(APIView):
 
 
 class AlertResolveView(APIView):
-    """Doctor (assigned to the baby) or admin only. A parent can acknowledge
-    but cannot assert a vitals-based alert is resolved."""
+    """Assigned doctor only. A parent can acknowledge but cannot assert a
+    vitals-based alert is resolved; admins supervise alerts read-only."""
 
     permission_classes = [permissions.IsAuthenticated]
 
@@ -90,8 +94,8 @@ class AlertResolveView(APIView):
         alert = generics.get_object_or_404(
             Alert.objects.filter(baby__in=babies_for(request.user)), pk=pk
         )
-        if request.user.role not in ("doctor", "admin"):
-            raise PermissionDenied("Only a doctor or admin can resolve an alert.")
+        if request.user.role != "doctor":
+            raise PermissionDenied("Only the assigned doctor can resolve an alert.")
         if alert.resolved_at is not None:
             raise ValidationError("This alert is already resolved.")
         alert.resolved_at = timezone.now()
@@ -112,19 +116,19 @@ class ReportBleLostView(APIView):
     def post(self, request):
         serializer = BleLostReportSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
-        bracelet = serializer.validated_data["bracelet"]
-        if bracelet.baby is None or not user_can_access_baby(request.user, bracelet.baby):
+        belt = serializer.validated_data["belt"]
+        if belt.baby is None or not user_can_access_baby(request.user, belt.baby):
             return Response({"detail": "Forbidden."}, status=403)
         if Alert.objects.filter(
-            baby_id=bracelet.baby_id, type=Alert.Type.BLE_LOST, resolved_at__isnull=True
+            baby_id=belt.baby_id, type=Alert.Type.BLE_LOST, resolved_at__isnull=True
         ).exists():
             return Response({"detail": "Already reported."}, status=200)
         alert = Alert.objects.create(
-            baby_id=bracelet.baby_id,
-            bracelet=bracelet,
+            baby_id=belt.baby_id,
+            belt=belt,
             type=Alert.Type.BLE_LOST,
             severity=Alert.Severity.WARNING,
-            message="Bluetooth connection to the bracelet was lost — live monitoring is interrupted.",
+            message="Bluetooth connection to the belt was lost — live monitoring is interrupted.",
             triggered_at=timezone.now(),
         )
         dispatch_alert_notifications.delay(alert.id)

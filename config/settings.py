@@ -1,5 +1,5 @@
 """
-Django settings for the Smart Bracelet Newborn Monitoring backend.
+Django settings for the Smart belt Newborn Monitoring backend.
 
 All secrets and environment-specific values come from environment variables
 (see .env.example). Nothing sensitive is hardcoded. DEBUG defaults to False.
@@ -19,10 +19,14 @@ SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "insecure-dev-only-key-do-not-u
 DEBUG = env_bool("DJANGO_DEBUG", "false")
  
 
-ALLOWED_HOSTS = os.environ.get('ALLOWED_HOSTS', '').split(',') if os.environ.get('ALLOWED_HOSTS') else []
+# DJANGO_ALLOWED_HOSTS is the documented name (.env.example, deployment guide);
+# ALLOWED_HOSTS is still read for existing deployments.
+_hosts_env = os.environ.get("DJANGO_ALLOWED_HOSTS") or os.environ.get("ALLOWED_HOSTS", "")
+ALLOWED_HOSTS = [h.strip() for h in _hosts_env.split(",") if h.strip()]
 
-# optional: always allow localhost for local dev
-ALLOWED_HOSTS += ['localhost', '127.0.0.1','centure-backend-3inq.onrender.com']
+# optional: always allow localhost for local dev (10.0.2.2 = the host PC as
+# seen from the Android emulator)
+ALLOWED_HOSTS += ['localhost', '127.0.0.1', '10.0.2.2', 'centure-backend-3inq.onrender.com']
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -40,11 +44,12 @@ INSTALLED_APPS = [
     "users",
     "authentication",
     "babies",
-    "bracelets",
+    "belts",
     "measurements",
     "alerts",
     "notifications",
     "analysis",
+    "invitations",
 ]
 
 MIDDLEWARE = [
@@ -85,8 +90,8 @@ if os.environ.get("POSTGRES_HOST"):
     DATABASES = {
         "default": {
             "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.environ.get("POSTGRES_DB", "bracelet"),
-            "USER": os.environ.get("POSTGRES_USER", "bracelet"),
+            "NAME": os.environ.get("POSTGRES_DB", "belt"),
+            "USER": os.environ.get("POSTGRES_USER", "belt"),
             "PASSWORD": os.environ.get("POSTGRES_PASSWORD", ""),
             "HOST": os.environ["POSTGRES_HOST"],
             "PORT": os.environ.get("POSTGRES_PORT", "5432"),
@@ -155,7 +160,7 @@ SIMPLE_JWT = {
 }
 
 SPECTACULAR_SETTINGS = {
-    "TITLE": "Smart Bracelet Newborn Monitoring API",
+    "TITLE": "Smart belt Newborn Monitoring API",
     "DESCRIPTION": (
         "REST API for the newborn vitals monitoring ecosystem. "
         "IMPORTANT: this system flags abnormal readings for caregiver or medical "
@@ -184,10 +189,15 @@ CELERY_TASK_ALWAYS_EAGER = _IN_PYTEST
 CELERY_TASK_EAGER_PROPAGATES = True
 CELERY_TASK_IGNORE_RESULT = _IN_PYTEST
 CELERY_BEAT_SCHEDULE = {
-    # Detects bracelets that stopped sending data ("no_data" rule, Section 5).
+    # Detects belts that stopped sending data ("no_data" rule, Section 5).
     "detect-no-data": {
         "task": "analysis.tasks.detect_no_data",
         "schedule": float(os.environ.get("NO_DATA_CHECK_SECONDS", "60")),
+    },
+    # Marks pending parent invitations past their expiry as expired (enrollment refonte).
+    "expire-invitations": {
+        "task": "invitations.tasks.expire_invitations",
+        "schedule": float(os.environ.get("INVITATION_EXPIRY_CHECK_SECONDS", "3600")),
     },
 }
 
@@ -198,17 +208,51 @@ FCM_PROJECT_ID = os.environ.get("FCM_PROJECT_ID", "")
 FCM_SERVICE_ACCOUNT_FILE = os.environ.get("FCM_SERVICE_ACCOUNT_FILE", "")
 
 # ---------------------------------------------------------------------------
-# Alert thresholds for the rule engine (env-overridable, sensible newborn defaults)
+# Parent invitations (enrollment refonte): validity of an invitation link.
 # ---------------------------------------------------------------------------
+INVITATION_TTL_DAYS = int(os.environ.get("INVITATION_TTL_DAYS", "7"))
+
+# ---------------------------------------------------------------------------
+# Alert thresholds for the rule engine — the single source of truth (older
+# child). Every key is env-overridable. The mobile app mirrors the defaults
+# in lib/core/vital_thresholds.dart (live tile colours only);
+# analysis/tests/test_classifier.py fails if the two drift apart.
+# How each value is used: analysis/classifier.py.
+# ---------------------------------------------------------------------------
+def _threshold(name: str, default: float) -> float:
+    return float(os.environ.get(name, str(default)))
+
+
+# Key names deliberately differ from the old newborn keys (HR_LOW_BPM,
+# RESP_LOW_BRPM, TEMP_HIGH_C, …) so a stale .env cannot override them.
 ANALYSIS_THRESHOLDS = {
-    "TEMP_HIGH_C": float(os.environ.get("TEMP_HIGH_C", "38.0")),
-    "TEMP_LOW_C": float(os.environ.get("TEMP_LOW_C", "36.0")),
-    "SPO2_LOW_PCT": float(os.environ.get("SPO2_LOW_PCT", "92.0")),
-    "HR_HIGH_BPM": float(os.environ.get("HR_HIGH_BPM", "180.0")),
-    "HR_LOW_BPM": float(os.environ.get("HR_LOW_BPM", "90.0")),
-    "BATTERY_LOW_PCT": float(os.environ.get("BATTERY_LOW_PCT", "15.0")),
-    "NO_MOVEMENT_MINUTES": float(os.environ.get("NO_MOVEMENT_MINUTES", "20.0")),
-    "NO_DATA_MINUTES": float(os.environ.get("NO_DATA_MINUTES", "5.0")),
+    # Heart rate (bpm)
+    "HR_REST_HIGH_BPM": _threshold("HR_REST_HIGH_BPM", 100.0),      # > : warning at rest
+    "HR_EFFORT_HIGH_BPM": _threshold("HR_EFFORT_HIGH_BPM", 160.0),  # > : warning any time
+    "HR_CRITICAL_HIGH_BPM": _threshold("HR_CRITICAL_HIGH_BPM", 180.0),  # > sustained: critical
+    "HR_WARN_LOW_BPM": _threshold("HR_WARN_LOW_BPM", 50.0),          # < : warning
+    "HR_CRITICAL_LOW_BPM": _threshold("HR_CRITICAL_LOW_BPM", 40.0),  # < : critical
+    # Respiratory rate (breaths/min)
+    "RESP_REST_HIGH_BRPM": _threshold("RESP_REST_HIGH_BRPM", 30.0),      # > : warning at rest
+    "RESP_EFFORT_HIGH_BRPM": _threshold("RESP_EFFORT_HIGH_BRPM", 40.0),  # > : critical at rest, warning after effort
+    "RESP_CRITICAL_HIGH_BRPM": _threshold("RESP_CRITICAL_HIGH_BRPM", 50.0),  # > : critical any time
+    "RESP_WARN_LOW_BRPM": _threshold("RESP_WARN_LOW_BRPM", 12.0),        # < : warning
+    "RESP_CRITICAL_LOW_BRPM": _threshold("RESP_CRITICAL_LOW_BRPM", 8.0),  # < : critical
+    # Temperature (°C)
+    "TEMP_INFO_HIGH_C": _threshold("TEMP_INFO_HIGH_C", 37.5),          # > : info
+    "TEMP_FEVER_C": _threshold("TEMP_FEVER_C", 38.0),                  # >= : warning
+    "TEMP_CRITICAL_HIGH_C": _threshold("TEMP_CRITICAL_HIGH_C", 39.0),  # >= : critical
+    "TEMP_WARN_LOW_C": _threshold("TEMP_WARN_LOW_C", 36.0),            # < : warning
+    "TEMP_CRITICAL_LOW_C": _threshold("TEMP_CRITICAL_LOW_C", 35.0),    # < : critical
+    # Battery (%)
+    "BATTERY_INFO_PCT": _threshold("BATTERY_INFO_PCT", 20.0),          # < : info
+    "BATTERY_WARN_PCT": _threshold("BATTERY_WARN_PCT", 10.0),          # < : warning
+    # Persistence: consecutive out-of-range readings (5 s cadence) needed
+    # before an alert fires, so one noisy sample never raises one.
+    "PERSIST_READINGS": _threshold("PERSIST_READINGS", 3),
+    "PERSIST_CRITICAL_READINGS": _threshold("PERSIST_CRITICAL_READINGS", 6),  # HR / respiration
+    "PERSIST_WINDOW_S": _threshold("PERSIST_WINDOW_S", 300),  # streak readings must be this recent
+    "NO_DATA_MINUTES": _threshold("NO_DATA_MINUTES", 5.0),
 }
 
 # Security hardening (effective behind nginx TLS termination — see deployment guide)

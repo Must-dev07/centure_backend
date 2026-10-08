@@ -17,7 +17,7 @@ class Migration(migrations.Migration):
             name='NotificationPreference',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
-                ('category', models.CharField(choices=[('bracelet', 'Bracelet'), ('medical', 'Medical'), ('system', 'System')], max_length=10)),
+                ('category', models.CharField(choices=[('belt', 'belt'), ('medical', 'Medical'), ('system', 'System')], max_length=10)),
                 ('enabled', models.BooleanField(default=True)),
                 ('user', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='notification_preferences', to=settings.AUTH_USER_MODEL)),
             ],

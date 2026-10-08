@@ -12,10 +12,21 @@ from rest_framework.test import APIClient
 from tests.factories import (
     AdminFactory,
     BabyFactory,
-    BraceletFactory,
+    beltFactory,
     DoctorFactory,
     ParentFactory,
 )
+
+
+@pytest.fixture(autouse=True)
+def _reset_throttle_cache():
+    # DRF throttle counters live in the cache; without a reset, the shared
+    # anonymous "auth" budget (login, register, invitation accept) leaks
+    # between tests and later tests get 429s.
+    from django.core.cache import cache
+
+    cache.clear()
+    yield
 
 
 @pytest.fixture
@@ -44,8 +55,8 @@ def baby(parent, doctor):
 
 
 @pytest.fixture
-def bracelet(baby):
-    b = BraceletFactory()
+def belt(baby):
+    b = beltFactory()
     b.pair_with(baby)
     b.refresh_from_db()
     return b

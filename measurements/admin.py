@@ -5,7 +5,7 @@ from .models import Measurement
 
 @admin.register(Measurement)
 class MeasurementAdmin(admin.ModelAdmin):
-    list_display = ["baby", "bracelet", "heart_rate", "temperature", "spo2", "battery", "recorded_at"]
+    list_display = ["baby", "belt", "heart_rate", "temperature", "respiratory_rate", "battery", "recorded_at"]
     list_filter = ["skin_contact"]
     date_hierarchy = "recorded_at"
     # Read-only in admin — measurements come from devices, never hand-edited.

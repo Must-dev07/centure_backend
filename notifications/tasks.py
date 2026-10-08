@@ -23,7 +23,9 @@ def dispatch_alert_notifications(alert_id: int) -> int:
     except Alert.DoesNotExist:
         return 0
 
-    targets = [alert.baby.parent.user]
+    # A baby enrolled before its parent accepted the invitation has no parent:
+    # notify whoever exists (the doctor rule below is unchanged).
+    targets = [alert.baby.parent.user] if alert.baby.parent_id is not None else []
     doctor = alert.baby.assigned_doctor
     if doctor and alert.severity in DOCTOR_SEVERITIES:
         targets.append(doctor.user)

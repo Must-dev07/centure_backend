@@ -1,4 +1,5 @@
 """Doctor/Parent profile endpoints + admin user listing for the dashboard."""
+from django.db.models import Q
 from django.utils import timezone
 from rest_framework import generics, permissions, status
 from rest_framework.exceptions import ValidationError
@@ -6,7 +7,7 @@ from rest_framework.response import Response
 from rest_framework.views import APIView
 
 from authentication.models import Session
-from common.permissions import IsAdmin
+from common.permissions import IsAdmin, IsDoctorOrAdmin
 from .models import Doctor, Parent, User
 from .serializers import DoctorSerializer, ParentSerializer, UserSummarySerializer
 
@@ -37,11 +38,23 @@ class DoctorListView(generics.ListAPIView):
 
 
 class ParentListView(generics.ListAPIView):
-    """Admin-only: full parent list for the dashboard Parents page."""
+    """Parent directory for doctors and admins (REFONTE §3.2): the dashboard
+    Parents page (admin) and the enrollment form's parent lookup. `?search=`
+    matches email, first name, or last name (case-insensitive)."""
 
-    queryset = Parent.objects.select_related("user").order_by("id")
     serializer_class = ParentSerializer
-    permission_classes = [IsAdmin]
+    permission_classes = [IsDoctorOrAdmin]
+
+    def get_queryset(self):
+        qs = Parent.objects.select_related("user").order_by("id")
+        search = self.request.query_params.get("search", "").strip()
+        if search:
+            qs = qs.filter(
+                Q(user__email__icontains=search)
+                | Q(user__first_name__icontains=search)
+                | Q(user__last_name__icontains=search)
+            )
+        return qs
 
 
 class UserListView(generics.ListAPIView):

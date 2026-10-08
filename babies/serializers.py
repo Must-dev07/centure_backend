@@ -22,10 +22,12 @@ class BabySerializer(serializers.ModelSerializer):
     class Meta:
         model = Baby
         fields = [
-            "id", "name", "birth_date", "weight_grams", "gender",
-            "parent", "parent_name", "assigned_doctor", "medical_history", "created_at",
+            "id", "name", "birth_date", "weight_grams", "height_cm", "gender",
+            "parent", "parent_name", "assigned_doctor",
+            "enrollment_reason", "enrollment_notes", "gestational_age_weeks", "enrolled_by",
+            "medical_history", "created_at",
         ]
-        read_only_fields = ["id", "parent", "created_at"]
+        read_only_fields = ["id", "parent", "enrolled_by", "created_at"]
 
     def validate_birth_date(self, value):
         if value > timezone.now().date():
@@ -37,6 +39,32 @@ class BabySerializer(serializers.ModelSerializer):
         if not (300 <= value <= 8000):
             raise serializers.ValidationError("Weight must be between 300g and 8000g.")
         return value
+
+    def validate_height_cm(self, value):
+        # Plausibility bounds for a monitored newborn/infant
+        if value is not None and not (20 <= value <= 120):
+            raise serializers.ValidationError("Height must be between 20 cm and 120 cm.")
+        return value
+
+    def validate(self, attrs):
+        # REFONTE §2.1: the "other" enrollment reason requires a description.
+        reason = attrs.get("enrollment_reason", getattr(self.instance, "enrollment_reason", None))
+        notes = attrs.get("enrollment_notes", getattr(self.instance, "enrollment_notes", ""))
+        if reason == Baby.EnrollmentReason.OTHER and not (notes or "").strip():
+            raise serializers.ValidationError(
+                {"enrollment_notes": "A description is required when the enrollment reason is 'other'."}
+            )
+        return attrs
+
+
+class BabyEnrollmentSerializer(BabySerializer):
+    """POST /babies/ payload (REFONTE §3.1): the baby fields plus the parent's
+    email, used to link an existing parent or invite a new one."""
+
+    parent_email = serializers.EmailField(write_only=True)
+
+    class Meta(BabySerializer.Meta):
+        fields = BabySerializer.Meta.fields + ["parent_email"]
 
 
 class DoctorAssignmentRequestSerializer(serializers.ModelSerializer):

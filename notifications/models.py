@@ -28,7 +28,7 @@ class Notification(models.Model):
 
     class Category(models.TextChoices):
         ALERT = "alert"          # vitals/device alert dispatch (tasks.py)
-        BRACELET = "bracelet"    # pairing/unpairing/replacement events
+        belt = "belt"    # pairing/unpairing/replacement events
         MEDICAL = "medical"      # doctor-assignment request/accept/decline
         SYSTEM = "system"        # account/welcome/security events
 
@@ -48,14 +48,14 @@ class Notification(models.Model):
 
 
 class NotificationPreference(models.Model):
-    """Section 11 "Notification preferences": a user can mute bracelet/
+    """Section 11 "Notification preferences": a user can mute belt/
     medical/system notifications. `alert` is deliberately NOT a valid
     category here — vitals/device alerts are safety-relevant and always
     delivered, never user-mutable. Missing row for a category == enabled
     (the default), so most users never have any rows at all."""
 
     class MutableCategory(models.TextChoices):
-        BRACELET = "bracelet"
+        belt = "belt"
         MEDICAL = "medical"
         SYSTEM = "system"
 

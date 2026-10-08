@@ -97,11 +97,13 @@ def test_welcome_notification_sent_on_registration():
     from rest_framework.test import APIClient
 
     client = APIClient()
+    # Parent self-registration is closed (REFONTE §3.4); doctors still self-register.
     resp = client.post(
         "/api/v1/auth/register",
         {
-            "email": "new.parent@example.com", "password": "s3cur3pass!",
-            "first_name": "New", "last_name": "Parent", "role": "parent",
+            "email": "new.doctor@example.com", "password": "s3cur3pass!",
+            "first_name": "New", "last_name": "Doctor", "role": "doctor",
+            "license_number": "LIC-424242",
         },
         format="json",
     )
@@ -112,36 +114,36 @@ def test_welcome_notification_sent_on_registration():
     assert "Welcome" in notif.title
 
 
-def test_bracelet_pair_and_unpair_notify_parent(parent, parent_client, baby):
-    from tests.factories import BraceletFactory
+def test_belt_pair_and_unpair_notify_parent(parent, parent_client, baby):
+    from tests.factories import beltFactory
 
-    bracelet = BraceletFactory(baby=None)
-    parent_client.post(f"/api/v1/bracelets/{bracelet.id}/pair/", {"baby_id": baby.id}, format="json")
+    belt = beltFactory(baby=None)
+    parent_client.post(f"/api/v1/belts/{belt.id}/pair/", {"baby_id": baby.id}, format="json")
     assert Notification.objects.filter(
-        user=parent.user, category="bracelet", title="Bracelet paired"
+        user=parent.user, category="belt", title="belt paired"
     ).exists()
 
-    parent_client.post(f"/api/v1/bracelets/{bracelet.id}/unpair/")
+    parent_client.post(f"/api/v1/belts/{belt.id}/unpair/")
     assert Notification.objects.filter(
-        user=parent.user, category="bracelet", title="Bracelet disconnected"
+        user=parent.user, category="belt", title="belt disconnected"
     ).exists()
 
 
 def test_preferences_default_all_enabled(parent_client):
     resp = parent_client.get("/api/v1/notifications/preferences/")
     assert resp.status_code == 200
-    assert resp.data == {"bracelet": True, "medical": True, "system": True}
+    assert resp.data == {"belt": True, "medical": True, "system": True}
 
 
 def test_muting_a_category_suppresses_notify(parent, parent_client):
     from notifications.utils import notify
 
     parent_client.patch(
-        "/api/v1/notifications/preferences/", {"bracelet": False}, format="json"
+        "/api/v1/notifications/preferences/", {"belt": False}, format="json"
     )
-    result = notify(parent.user, "Bracelet paired", "…", category="bracelet")
+    result = notify(parent.user, "belt paired", "…", category="belt")
     assert result is None
-    assert not Notification.objects.filter(user=parent.user, category="bracelet").exists()
+    assert not Notification.objects.filter(user=parent.user, category="belt").exists()
 
     # Unaffected category still delivers.
     result2 = notify(parent.user, "Welcome", "…", category="system")

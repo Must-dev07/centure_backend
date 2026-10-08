@@ -1,6 +1,6 @@
 from rest_framework import serializers
 
-from bracelets.models import Bracelet
+from belts.models import belt
 from .models import Alert
 
 
@@ -13,7 +13,7 @@ class AlertSerializer(serializers.ModelSerializer):
     class Meta:
         model = Alert
         fields = [
-            "id", "baby", "baby_name", "bracelet", "type", "severity", "message",
+            "id", "baby", "baby_name", "belt", "type", "severity", "message",
             "value", "triggered_at", "resolved_at", "resolved_by", "resolved_by_name",
             "acknowledged_by", "acknowledged_by_name", "acknowledged_at",
             "auto_resolves_on_acknowledge", "disclaimer",
@@ -35,6 +35,6 @@ class AlertSerializer(serializers.ModelSerializer):
 
 
 class BleLostReportSerializer(serializers.Serializer):
-    bracelet_id = serializers.PrimaryKeyRelatedField(
-        queryset=Bracelet.objects.all(), source="bracelet"
+    belt_id = serializers.PrimaryKeyRelatedField(
+        queryset=belt.objects.all(), source="belt"
     )

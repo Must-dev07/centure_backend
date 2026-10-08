@@ -11,7 +11,7 @@ def evaluate_non_critical_rules(measurement_id: int) -> int:
     from analysis.rules import run_rules
 
     try:
-        m = Measurement.objects.select_related("baby", "bracelet").get(id=measurement_id)
+        m = Measurement.objects.select_related("baby", "belt").get(id=measurement_id)
     except Measurement.DoesNotExist:
         return 0
     return len(run_rules(m, non_critical_only=True))
@@ -20,32 +20,32 @@ def evaluate_non_critical_rules(measurement_id: int) -> int:
 @shared_task
 def detect_no_data() -> int:
     """Celery-beat task: raises a NO_DATA alert for every actively-paired
-    bracelet that has not been seen for NO_DATA_MINUTES."""
+    belt that has not been seen for NO_DATA_MINUTES."""
     from alerts.models import Alert
-    from bracelets.models import Bracelet
+    from belts.models import belt
     from notifications.tasks import dispatch_alert_notifications
 
     cutoff = timezone.now() - timezone.timedelta(
         minutes=settings.ANALYSIS_THRESHOLDS["NO_DATA_MINUTES"]
     )
-    stale = Bracelet.objects.filter(
-        baby__isnull=False, status=Bracelet.Status.ACTIVE
-    ).filter(last_seen_at__lt=cutoff) | Bracelet.objects.filter(
-        baby__isnull=False, status=Bracelet.Status.ACTIVE, last_seen_at__isnull=True
+    stale = belt.objects.filter(
+        baby__isnull=False, status=belt.Status.ACTIVE
+    ).filter(last_seen_at__lt=cutoff) | belt.objects.filter(
+        baby__isnull=False, status=belt.Status.ACTIVE, last_seen_at__isnull=True
     )
     count = 0
-    for bracelet in stale.select_related("baby").distinct():
+    for belt in stale.select_related("baby").distinct():
         if Alert.objects.filter(
-            baby_id=bracelet.baby_id, type=Alert.Type.NO_DATA, resolved_at__isnull=True
+            baby_id=belt.baby_id, type=Alert.Type.NO_DATA, resolved_at__isnull=True
         ).exists():
             continue
         alert = Alert.objects.create(
-            baby_id=bracelet.baby_id,
-            bracelet=bracelet,
+            baby_id=belt.baby_id,
+            belt=belt,
             type=Alert.Type.NO_DATA,
             severity=Alert.Severity.WARNING,
             message=(
-                "No data received from the bracelet for "
+                "No data received from the belt for "
                 f"{settings.ANALYSIS_THRESHOLDS['NO_DATA_MINUTES']:.0f} minutes — "
                 "please check the device and connection."
             ),

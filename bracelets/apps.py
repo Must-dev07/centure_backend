@@ -1,6 +1,6 @@
 from django.apps import AppConfig
 
 
-class BraceletsConfig(AppConfig):
+class beltsConfig(AppConfig):
     default_auto_field = "django.db.models.BigAutoField"
-    name = "bracelets"
+    name = "belts"

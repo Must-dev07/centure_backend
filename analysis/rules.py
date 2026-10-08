@@ -1,21 +1,29 @@
 """Pluggable rule engine (Section 4.4).
 
 Adding a rule = one new Rule subclass + one @register line. Rules marked
-`critical=True` run synchronously on ingest (SpO2/HR — latency-critical);
+`critical=True` run synchronously on ingest (HR/respiration — latency-critical);
 the rest run in a Celery task right after ingest.
 
+Vital-sign rules are context-aware and persistent (analysis/classifier.py):
+severity depends on the measurement's activity, and a level only fires once
+enough consecutive recent readings reach it — one noisy sample never does.
+
 Deduplication: a rule does not re-fire while an unresolved alert of the same
-type exists for the same baby (prevents alert storms on continuous streams).
+type and at least the same severity exists for the same baby (prevents alert
+storms on continuous streams); an escalation (e.g. fever warning → critical)
+does raise a new alert.
 """
 from __future__ import annotations
 
 from dataclasses import dataclass
+from datetime import timedelta
 from typing import Optional
 
 from django.conf import settings
-from django.utils import timezone
 
 from alerts.models import Alert
+
+from . import classifier as c
 
 
 @dataclass
@@ -50,138 +58,138 @@ def register(cls):
 
 
 # ---------------------------------------------------------------------------
-# Rules — Section 5 of the original spec. Messages use "flagged for follow-up"
-# language, never diagnostic claims (Section 0, rule 10).
+# Vital-sign rules. Messages use "flagged for follow-up" language, never
+# diagnostic claims (Section 0, rule 10).
 # ---------------------------------------------------------------------------
 
-@register
-class HighTemperatureRule(Rule):
-    def evaluate(self, m):
-        t = self.thresholds()["TEMP_HIGH_C"]
-        if m.temperature is not None and m.temperature > t:
-            return RuleResult(
-                Alert.Type.HIGH_TEMP, Alert.Severity.CRITICAL,
-                f"Temperature reading {m.temperature:.1f}°C is above {t}°C — "
-                "flagged for caregiver/medical follow-up.",
-                m.temperature,
-            )
-        return None
+class VitalRule(Rule):
+    """One direction (high or low) of one vital, classified with context and
+    persistence. Subclasses only declare what they measure."""
 
+    field: str
+    table: tuple
+    direction: str
+    alert_type: str
+    label: str
+    unit: str
+    decimals = 0
+    # HR / respiration: a critical level must persist longer than a warning.
+    critical_needs_more = False
+    uses_activity = True
 
-@register
-class LowTemperatureRule(Rule):
-    def evaluate(self, m):
-        t = self.thresholds()["TEMP_LOW_C"]
-        if m.temperature is not None and m.temperature < t:
-            return RuleResult(
-                Alert.Type.LOW_TEMP, Alert.Severity.WARNING,
-                f"Temperature reading {m.temperature:.1f}°C is below {t}°C — "
-                "flagged for caregiver/medical follow-up.",
-                m.temperature,
-            )
-        return None
-
-
-@register
-class LowOxygenRule(Rule):
-    critical = True  # SpO2 is latency-critical — evaluated synchronously
-
-    def evaluate(self, m):
-        t = self.thresholds()["SPO2_LOW_PCT"]
-        if m.spo2 is not None and m.spo2 < t:
-            return RuleResult(
-                Alert.Type.LOW_OXYGEN, Alert.Severity.CRITICAL,
-                f"SpO2 reading {m.spo2:.0f}% is below {t}% — "
-                "flagged for caregiver/medical follow-up.",
-                m.spo2,
-            )
-        return None
-
-
-@register
-class HighHeartRateRule(Rule):
-    critical = True
-
-    def evaluate(self, m):
-        t = self.thresholds()["HR_HIGH_BPM"]
-        if m.heart_rate is not None and m.heart_rate > t:
-            return RuleResult(
-                Alert.Type.HIGH_HR, Alert.Severity.CRITICAL,
-                f"Heart rate reading {m.heart_rate:.0f} bpm is above {t} bpm — "
-                "flagged for caregiver/medical follow-up.",
-                m.heart_rate,
-            )
-        return None
-
-
-@register
-class LowHeartRateRule(Rule):
-    critical = True
-
-    def evaluate(self, m):
-        t = self.thresholds()["HR_LOW_BPM"]
-        if m.heart_rate is not None and m.heart_rate < t:
-            return RuleResult(
-                Alert.Type.LOW_HR, Alert.Severity.CRITICAL,
-                f"Heart rate reading {m.heart_rate:.0f} bpm is below {t} bpm — "
-                "flagged for caregiver/medical follow-up.",
-                m.heart_rate,
-            )
-        return None
-
-
-@register
-class NoMovementRule(Rule):
-    """Fires if the current measurement AND all measurements in the last
-    NO_MOVEMENT_MINUTES window show near-zero movement magnitude."""
-
-    MAGNITUDE_EPSILON = 0.05
-
-    def evaluate(self, m):
-        mag = (m.movement or {}).get("magnitude")
-        if mag is None or mag > self.MAGNITUDE_EPSILON:
-            return None
-        window_min = self.thresholds()["NO_MOVEMENT_MINUTES"]
-        since = m.recorded_at - timezone.timedelta(minutes=window_min)
+    def recent(self, m) -> list[tuple[float, Optional[str]]]:
+        """(value, activity) of this reading plus the preceding ones of the
+        same baby, newest first. Stops at a gap (value not measured)."""
         from measurements.models import Measurement
 
-        window = Measurement.objects.filter(
-            baby_id=m.baby_id, recorded_at__gte=since, recorded_at__lte=m.recorded_at
-        ).values_list("movement", flat=True)[:500]
-        readings = [w.get("magnitude") for w in window if w and w.get("magnitude") is not None]
-        if len(readings) >= 3 and all(r <= self.MAGNITUDE_EPSILON for r in readings):
-            return RuleResult(
-                Alert.Type.NO_MOVEMENT, Alert.Severity.CRITICAL,
-                f"No movement detected for {window_min:.0f} minutes — "
-                "please check on the baby; flagged for follow-up.",
-                mag,
+        t = self.thresholds()
+        n = max(int(t["PERSIST_READINGS"]), int(t["PERSIST_CRITICAL_READINGS"]))
+        since = m.recorded_at - timedelta(seconds=t["PERSIST_WINDOW_S"])
+        rows = (
+            Measurement.objects.filter(
+                baby_id=m.baby_id, recorded_at__lte=m.recorded_at, recorded_at__gte=since
             )
-        return None
+            .exclude(pk=m.pk)
+            .order_by("-recorded_at")
+            .values_list(self.field, "activity")[: n - 1]
+        )
+        out = [(getattr(m, self.field), m.activity)]
+        for value, activity in rows:
+            if value is None:
+                break
+            out.append((value, activity))
+        return out
+
+    def evaluate(self, m):
+        value = getattr(m, self.field)
+        if value is None:
+            return None
+        t = self.thresholds()
+        readings = [c.classify(self.table, v, a, t) for v, a in self.recent(m)]
+        result = c.persisted(readings, c.required_readings(t, self.critical_needs_more))
+        if result.severity == c.NORMAL or result.direction != self.direction:
+            return None
+        return RuleResult(self.alert_type, result.severity, self.message(m, value, result), value)
+
+    def message(self, m, value, result) -> str:
+        fmt = f"{{:.{self.decimals}f}}"
+        where = f" {c.CONTEXT_LABEL[c.context_for(m.activity)]}" if self.uses_activity else ""
+        side = "above" if self.direction == c.HIGH else "below"
+        return (
+            f"{self.label} {fmt.format(value)} {self.unit}{where} has stayed {side} "
+            f"{fmt.format(result.limit)} {self.unit} ({result.severity}) — "
+            "flagged for caregiver/medical follow-up."
+        )
 
 
 @register
-class BraceletRemovedRule(Rule):
+class HighTemperatureRule(VitalRule):
+    field, table, direction = "temperature", c.TEMPERATURE, c.HIGH
+    alert_type, label, unit, decimals = Alert.Type.HIGH_TEMP, "Temperature", "°C", 1
+    uses_activity = False
+
+
+@register
+class LowTemperatureRule(VitalRule):
+    field, table, direction = "temperature", c.TEMPERATURE, c.LOW
+    alert_type, label, unit, decimals = Alert.Type.LOW_TEMP, "Temperature", "°C", 1
+    uses_activity = False
+
+
+@register
+class HighHeartRateRule(VitalRule):
+    critical = True
+    field, table, direction = "heart_rate", c.HEART_RATE, c.HIGH
+    alert_type, label, unit = Alert.Type.HIGH_HR, "Heart rate", "bpm"
+    critical_needs_more = True
+
+
+@register
+class LowHeartRateRule(VitalRule):
+    critical = True
+    field, table, direction = "heart_rate", c.HEART_RATE, c.LOW
+    alert_type, label, unit = Alert.Type.LOW_HR, "Heart rate", "bpm"
+    critical_needs_more = True
+
+
+@register
+class HighRespirationRule(VitalRule):
+    critical = True
+    field, table, direction = "respiratory_rate", c.RESPIRATION, c.HIGH
+    alert_type, label, unit = Alert.Type.HIGH_RESP, "Respiratory rate", "breaths/min"
+    critical_needs_more = True
+
+
+@register
+class LowRespirationRule(VitalRule):
+    critical = True  # slow or absent breathing is latency-critical
+    field, table, direction = "respiratory_rate", c.RESPIRATION, c.LOW
+    alert_type, label, unit = Alert.Type.LOW_RESP, "Respiratory rate", "breaths/min"
+    critical_needs_more = True
+
+
+@register
+class beltRemovedRule(Rule):
     def evaluate(self, m):
         if m.skin_contact is False:
             return RuleResult(
-                Alert.Type.BRACELET_REMOVED, Alert.Severity.WARNING,
-                "Skin-contact sensor reports the bracelet may have been removed — "
+                Alert.Type.belt_REMOVED, Alert.Severity.WARNING,
+                "Skin-contact sensor reports the belt may have been removed — "
                 "monitoring is interrupted until it is repositioned.",
             )
         return None
 
 
 @register
-class BatteryLowRule(Rule):
-    def evaluate(self, m):
-        t = self.thresholds()["BATTERY_LOW_PCT"]
-        if m.battery is not None and m.battery < t:
-            return RuleResult(
-                Alert.Type.BATTERY_LOW, Alert.Severity.INFO,
-                f"Bracelet battery at {m.battery:.0f}% — please recharge soon.",
-                m.battery,
-            )
-        return None
+class BatteryLowRule(VitalRule):
+    field, table, direction = "battery", c.BATTERY, c.LOW
+    alert_type, label, unit = Alert.Type.BATTERY_LOW, "belt battery", "%"
+    uses_activity = False
+
+    def message(self, m, value, result) -> str:
+        if result.severity == c.WARNING:
+            return f"belt battery at {value:.0f}% — recharge now, monitoring will stop soon."
+        return f"belt battery at {value:.0f}% — please recharge soon."
 
 
 # NOTE: BLE_LOST is reported by the mobile app via POST /api/v1/alerts/report-ble-lost/
@@ -193,16 +201,18 @@ class BatteryLowRule(Rule):
 # Engine entry points
 # ---------------------------------------------------------------------------
 
-def _open_alert_exists(baby_id: int, alert_type: str) -> bool:
-    return Alert.objects.filter(
+def _open_alert_covers(baby_id: int, alert_type: str, severity: str) -> bool:
+    """An unresolved alert of this type at the same or a higher severity."""
+    open_severities = Alert.objects.filter(
         baby_id=baby_id, type=alert_type, resolved_at__isnull=True
-    ).exists()
+    ).values_list("severity", flat=True)
+    return any(c.RANK[s] >= c.RANK[severity] for s in open_severities)
 
 
 def _create_alert(measurement, result: RuleResult) -> Alert:
     alert = Alert.objects.create(
         baby_id=measurement.baby_id,
-        bracelet_id=measurement.bracelet_id,
+        belt_id=measurement.belt_id,
         type=result.type,
         severity=result.severity,
         message=result.message,
@@ -225,6 +235,6 @@ def run_rules(measurement, critical_only: bool = False, non_critical_only: bool 
         if non_critical_only and rule.critical:
             continue
         result = rule.evaluate(measurement)
-        if result and not _open_alert_exists(measurement.baby_id, result.type):
+        if result and not _open_alert_covers(measurement.baby_id, result.type, result.severity):
             created.append(_create_alert(measurement, result))
     return created

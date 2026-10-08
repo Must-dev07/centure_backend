@@ -2,18 +2,28 @@
 from django.db import models
 
 from babies.models import Baby
-from bracelets.models import Bracelet
+from belts.models import belt
 
 
 class Measurement(models.Model):
-    baby = models.ForeignKey(Baby, on_delete=models.CASCADE, related_name="measurements")
-    bracelet = models.ForeignKey(Bracelet, on_delete=models.CASCADE, related_name="measurements")
+    class Activity(models.TextChoices):
+        """Derived by the mobile app from the belt's movement data; gives
+        the alert rules their context (analysis/classifier.py)."""
+
+        SLEEP = "sleep"
+        REST = "rest"
+        EFFORT = "effort"
+        RECOVERY = "recovery"  # just after effort, vitals still coming down
+        UNKNOWN = "unknown"    # no movement data (no IMU fitted)
+
+    baby =models.ForeignKey(Baby, on_delete=models.CASCADE, related_name="measurements")
+    belt = models.ForeignKey(belt, on_delete=models.CASCADE, related_name="measurements")
     heart_rate = models.FloatField(null=True, blank=True)       # bpm
     temperature = models.FloatField(null=True, blank=True)      # °C
-    spo2 = models.FloatField(null=True, blank=True)             # %
-    movement = models.JSONField(null=True, blank=True)          # {"accel":[x,y,z],"gyro":[x,y,z],"magnitude":f}
+    respiratory_rate = models.FloatField(null=True, blank=True) # breaths/min
     battery = models.FloatField(null=True, blank=True)          # %
     skin_contact = models.BooleanField(default=True)
+    activity = models.CharField(max_length=10, choices=Activity.choices, default=Activity.UNKNOWN)
     recorded_at = models.DateTimeField(db_index=True)           # device timestamp
     received_at = models.DateTimeField(auto_now_add=True)       # server timestamp
 

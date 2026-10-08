@@ -3,7 +3,7 @@
 Roles are enforced server-side from the DB user record — never from client
 claims (Section 7 checklist).
 """
-from rest_framework.permissions import BasePermission
+from rest_framework.permissions import SAFE_METHODS, BasePermission
 
 
 class IsAdmin(BasePermission):
@@ -33,7 +33,8 @@ def user_can_access_baby(user, baby) -> bool:
     if user.role == "admin":
         return True
     if user.role == "parent":
-        return baby.parent.user_id == user.id
+        # A baby enrolled before its parent accepted the invitation has no parent.
+        return baby.parent_id is not None and baby.parent.user_id == user.id
     if user.role == "doctor":
         return baby.assigned_doctor is not None and baby.assigned_doctor.user_id == user.id
     return False
@@ -45,3 +46,13 @@ class IsParentOfBabyOrAssignedDoctorOrAdmin(BasePermission):
     def has_object_permission(self, request, view, obj):
         baby = getattr(obj, "baby", obj)
         return user_can_access_baby(request.user, baby)
+
+
+class ParentReadOnly(BasePermission):
+    """Refonte §3.6: parents keep read access to their babies' records but can
+    no longer modify or delete them (babies are enrolled by doctors/admins)."""
+
+    message = "Parents have read-only access to baby records."
+
+    def has_object_permission(self, request, view, obj):
+        return request.method in SAFE_METHODS or request.user.role != "parent"

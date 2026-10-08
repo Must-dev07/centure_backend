@@ -12,7 +12,7 @@ class Migration(migrations.Migration):
     dependencies = [
         ('alerts', '0001_initial'),
         ('babies', '0001_initial'),
-        ('bracelets', '0001_initial'),
+        ('belts', '0001_initial'),
         migrations.swappable_dependency(settings.AUTH_USER_MODEL),
     ]
 
@@ -29,8 +29,8 @@ class Migration(migrations.Migration):
         ),
         migrations.AddField(
             model_name='alert',
-            name='bracelet',
-            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='alerts', to='bracelets.bracelet'),
+            name='belt',
+            field=models.ForeignKey(null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='alerts', to='belts.belt'),
         ),
         migrations.AddIndex(
             model_name='alert',

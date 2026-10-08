@@ -7,18 +7,18 @@ from django.conf import settings
 from django.db import models
 
 from babies.models import Baby
-from bracelets.models import Bracelet
+from belts.models import belt
 
 
 class Alert(models.Model):
     class Type(models.TextChoices):
         HIGH_TEMP = "high_temp"
         LOW_TEMP = "low_temp"
-        LOW_OXYGEN = "low_oxygen"
         HIGH_HR = "high_hr"
         LOW_HR = "low_hr"
-        NO_MOVEMENT = "no_movement"
-        BRACELET_REMOVED = "bracelet_removed"
+        HIGH_RESP = "high_resp"
+        LOW_RESP = "low_resp"
+        belt_REMOVED = "belt_removed"
         BATTERY_LOW = "battery_low"
         BLE_LOST = "ble_lost"
         NO_DATA = "no_data"
@@ -36,7 +36,7 @@ class Alert(models.Model):
     NON_PERSISTENT_TYPES = {Type.BATTERY_LOW, Type.BLE_LOST, Type.NO_DATA}
 
     baby = models.ForeignKey(Baby, on_delete=models.CASCADE, related_name="alerts")
-    bracelet = models.ForeignKey(Bracelet, null=True, on_delete=models.SET_NULL, related_name="alerts")
+    belt = models.ForeignKey(belt, null=True, on_delete=models.SET_NULL, related_name="alerts")
     type = models.CharField(max_length=24, choices=Type.choices)
     severity = models.CharField(max_length=10, choices=Severity.choices)
     message = models.CharField(max_length=255)

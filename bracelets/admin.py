@@ -1,6 +1,6 @@
 from django.contrib import admin
 
-from .models import Bracelet, Pairing
+from .models import belt, Pairing
 
 
 class PairingInline(admin.TabularInline):
@@ -9,8 +9,8 @@ class PairingInline(admin.TabularInline):
     readonly_fields = ["paired_at"]
 
 
-@admin.register(Bracelet)
-class BraceletAdmin(admin.ModelAdmin):
+@admin.register(belt)
+class beltAdmin(admin.ModelAdmin):
     list_display = ["serial_number", "baby", "status", "battery_level", "last_seen_at", "firmware_version"]
     list_filter = ["status"]
     search_fields = ["serial_number"]

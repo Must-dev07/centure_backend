@@ -14,7 +14,7 @@ class Migration(migrations.Migration):
 
     operations = [
         migrations.CreateModel(
-            name='Bracelet',
+            name='belt',
             fields=[
                 ('id', models.BigAutoField(auto_created=True, primary_key=True, serialize=False, verbose_name='ID')),
                 ('serial_number', models.CharField(db_index=True, max_length=64, unique=True)),
@@ -23,7 +23,7 @@ class Migration(migrations.Migration):
                 ('last_seen_at', models.DateTimeField(blank=True, db_index=True, null=True)),
                 ('status', models.CharField(choices=[('active', 'Active'), ('inactive', 'Inactive'), ('maintenance', 'Maintenance')], default='inactive', max_length=12)),
                 ('created_at', models.DateTimeField(auto_now_add=True)),
-                ('baby', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='bracelets', to='babies.baby')),
+                ('baby', models.ForeignKey(blank=True, null=True, on_delete=django.db.models.deletion.SET_NULL, related_name='belts', to='babies.baby')),
             ],
         ),
         migrations.CreateModel(
@@ -33,7 +33,7 @@ class Migration(migrations.Migration):
                 ('paired_at', models.DateTimeField(auto_now_add=True)),
                 ('unpaired_at', models.DateTimeField(blank=True, null=True)),
                 ('baby', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='pairings', to='babies.baby')),
-                ('bracelet', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='pairings', to='bracelets.bracelet')),
+                ('belt', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='pairings', to='belts.belt')),
             ],
             options={
                 'ordering': ['-paired_at'],

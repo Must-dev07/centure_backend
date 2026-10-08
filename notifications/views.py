@@ -61,9 +61,9 @@ class NotificationReadAllView(APIView):
 
 
 class NotificationPreferencesView(APIView):
-    """Section 11: mute bracelet/medical/system notifications. `alert` is
+    """Section 11: mute belt/medical/system notifications. `alert` is
     deliberately not accepted here — see NotificationPreference's docstring.
-    GET/PATCH body shape: {"bracelet": bool, "medical": bool, "system": bool}
+    GET/PATCH body shape: {"belt": bool, "medical": bool, "system": bool}
     (a category absent from the response means "enabled", the default)."""
 
     permission_classes = [permissions.IsAuthenticated]

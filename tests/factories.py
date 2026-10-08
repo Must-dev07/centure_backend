@@ -3,7 +3,9 @@ import factory
 from django.utils import timezone
 
 from babies.models import Baby
-from bracelets.models import Bracelet
+from belts.models import belt
+from invitations.models import Invitation
+from invitations.services import generate_token, invitation_expiry
 from measurements.models import Measurement
 from users.models import Doctor, Parent, User
 
@@ -53,15 +55,31 @@ class BabyFactory(factory.django.DjangoModelFactory):
     gender = "female"
     parent = factory.SubFactory(ParentFactory)
     assigned_doctor = factory.SubFactory(DoctorFactory)
+    enrollment_reason = Baby.EnrollmentReason.PREMATURITY
+    # Enrolled by the assigned doctor when there is one, otherwise by an admin.
+    enrolled_by = factory.LazyAttribute(
+        lambda o: o.assigned_doctor.user if o.assigned_doctor else AdminFactory()
+    )
 
 
-class BraceletFactory(factory.django.DjangoModelFactory):
+class InvitationFactory(factory.django.DjangoModelFactory):
     class Meta:
-        model = Bracelet
+        model = Invitation
+
+    email = factory.Sequence(lambda n: f"invitee{n}@example.com")
+    token = factory.LazyFunction(generate_token)
+    status = Invitation.Status.PENDING
+    created_by = factory.SubFactory(AdminFactory)
+    expires_at = factory.LazyFunction(invitation_expiry)
+
+
+class beltFactory(factory.django.DjangoModelFactory):
+    class Meta:
+        model = belt
 
     serial_number = factory.Sequence(lambda n: f"SB-{n:08d}")
     firmware_version = "1.0.0"
-    status = Bracelet.Status.INACTIVE
+    status = belt.Status.INACTIVE
 
 
 class MeasurementFactory(factory.django.DjangoModelFactory):
@@ -69,11 +87,12 @@ class MeasurementFactory(factory.django.DjangoModelFactory):
         model = Measurement
 
     baby = factory.SubFactory(BabyFactory)
-    bracelet = factory.SubFactory(BraceletFactory)
-    heart_rate = 130.0
-    temperature = 37.0
-    spo2 = 98.0
-    movement = {"accel": [0.1, 0.2, 9.8], "gyro": [0, 0, 0], "magnitude": 0.4}
+    belt = factory.SubFactory(beltFactory)
+    # Older child at rest — all within normal range.
+    heart_rate = 85.0
+    temperature = 37.2
+    respiratory_rate = 22.0
     battery = 80.0
     skin_contact = True
+    activity = "rest"
     recorded_at = factory.LazyFunction(timezone.now)

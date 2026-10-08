@@ -4,13 +4,13 @@ services:
   db:
     image: postgres:16-alpine
     environment:
-      POSTGRES_DB: ${POSTGRES_DB:-bracelet}
-      POSTGRES_USER: ${POSTGRES_USER:-bracelet}
+      POSTGRES_DB: ${POSTGRES_DB:-belt}
+      POSTGRES_USER: ${POSTGRES_USER:-belt}
       POSTGRES_PASSWORD: ${POSTGRES_PASSWORD:?set in .env}
     volumes:
       - pgdata:/var/lib/postgresql/data
     healthcheck:
-      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-bracelet}"]
+      test: ["CMD-SHELL", "pg_isready -U ${POSTGRES_USER:-belt}"]
       interval: 5s
       timeout: 5s
       retries: 10

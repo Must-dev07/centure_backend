@@ -10,7 +10,7 @@ class Migration(migrations.Migration):
 
     dependencies = [
         ('babies', '0001_initial'),
-        ('bracelets', '0001_initial'),
+        ('belts', '0001_initial'),
     ]
 
     operations = [
@@ -27,7 +27,7 @@ class Migration(migrations.Migration):
                 ('recorded_at', models.DateTimeField(db_index=True)),
                 ('received_at', models.DateTimeField(auto_now_add=True)),
                 ('baby', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='measurements', to='babies.baby')),
-                ('bracelet', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='measurements', to='bracelets.bracelet')),
+                ('belt', models.ForeignKey(on_delete=django.db.models.deletion.CASCADE, related_name='measurements', to='belts.belt')),
             ],
             options={
                 'ordering': ['-recorded_at'],

@@ -50,16 +50,24 @@ class RegisterView(APIView):
     throttle_classes = [AuthThrottle]
 
     def post(self, request):
+        # REFONTE §3.4: parent accounts are only created by accepting a medical
+        # invitation. Doctor self-registration is unchanged; admin was never
+        # self-registrable (rejected by the serializer's role choices).
+        if request.data.get("role") == "parent":
+            return Response(
+                {"detail": "les comptes parents sont créés via une invitation médicale"},
+                status=status.HTTP_403_FORBIDDEN,
+            )
         serializer = RegisterSerializer(data=request.data)
         serializer.is_valid(raise_exception=True)
         user = serializer.save()
         role_tip = {
-            "parent": "Add your baby and pair a bracelet to get started.",
+            "parent": "Add your baby and pair a belt to get started.",
             "doctor": "Patients will appear once a parent requests you or an admin assigns you.",
         }.get(user.role, "Welcome aboard.")
         notify(
             user,
-            "Welcome to Smart Bracelet Monitor",
+            "Welcome to Smart belt Monitor",
             role_tip,
             category=Notification.Category.SYSTEM,
         )

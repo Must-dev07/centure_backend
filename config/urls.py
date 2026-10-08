@@ -7,10 +7,11 @@ api_v1 = [
     path("auth/", include("authentication.urls")),
     path("", include("users.urls")),          # /doctors/, /parents/
     path("babies/", include("babies.urls")),
-    path("bracelets/", include("bracelets.urls")),
+    path("belts/", include("belts.urls")),
     path("measurements/", include("measurements.urls")),
     path("alerts/", include("alerts.urls")),
     path("notifications/", include("notifications.urls")),
+    path("invitations/", include("invitations.urls")),
 ]
 
 urlpatterns = [

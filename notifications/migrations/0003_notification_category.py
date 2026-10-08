@@ -13,6 +13,6 @@ class Migration(migrations.Migration):
         migrations.AddField(
             model_name='notification',
             name='category',
-            field=models.CharField(choices=[('alert', 'Alert'), ('bracelet', 'Bracelet'), ('medical', 'Medical'), ('system', 'System')], default='system', max_length=10),
+            field=models.CharField(choices=[('alert', 'Alert'), ('belt', 'belt'), ('medical', 'Medical'), ('system', 'System')], default='system', max_length=10),
         ),
     ]
