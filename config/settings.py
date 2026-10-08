@@ -45,7 +45,7 @@ INSTALLED_APPS = [
     "users",
     "authentication",
     "babies",
-    "belts",
+    "bracelets",
     "measurements",
     "alerts",
     "notifications",
