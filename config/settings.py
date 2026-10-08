@@ -7,6 +7,7 @@ All secrets and environment-specific values come from environment variables
 import os
 from datetime import timedelta
 from pathlib import Path
+import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
 
@@ -86,6 +87,7 @@ WSGI_APPLICATION = "config.wsgi.application"
 
 # Database: PostgreSQL in docker-compose / production, SQLite fallback for
 # lightweight local test runs (pytest uses SQLite unless POSTGRES_HOST is set).
+
 if os.environ.get("POSTGRES_HOST"):
     DATABASES = {
         "default": {
@@ -105,6 +107,12 @@ else:
             "NAME": BASE_DIR / "db.sqlite3",
         }
     }
+
+# DATABASES = {
+#     "default": dj_database_url.config(
+#         conn_max_age=60,
+#     )
+# }
 
 AUTH_USER_MODEL = "users.User"
 
