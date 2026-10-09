@@ -1,3 +1,4 @@
+
 """
 Django settings for the Smart belt Newborn Monitoring backend.
 
@@ -5,8 +6,10 @@ All secrets and environment-specific values come from environment variables
 (see .env.example). Nothing sensitive is hardcoded. DEBUG defaults to False.
 """
 import os
+import sys
 from datetime import timedelta
 from pathlib import Path
+
 import dj_database_url
 
 BASE_DIR = Path(__file__).resolve().parent.parent
@@ -18,7 +21,7 @@ def env_bool(name: str, default: str = "false") -> bool:
 
 SECRET_KEY = os.environ.get("DJANGO_SECRET_KEY", "insecure-dev-only-key-do-not-use-in-prod")
 DEBUG = env_bool("DJANGO_DEBUG", "false")
- 
+
 
 # DJANGO_ALLOWED_HOSTS is the documented name (.env.example, deployment guide);
 # ALLOWED_HOSTS is still read for existing deployments.
@@ -27,7 +30,8 @@ ALLOWED_HOSTS = [h.strip() for h in _hosts_env.split(",") if h.strip()]
 
 # optional: always allow localhost for local dev (10.0.2.2 = the host PC as
 # seen from the Android emulator)
-ALLOWED_HOSTS += ['localhost', '127.0.0.1', '10.0.2.2', 'centure-backend-3inq.onrender.com','centure-dashboard-n7otet5i5-ved-sumt.vercel.app']
+ALLOWED_HOSTS += ['localhost', '127.0.0.1', '10.0.2.2', 'centure-backend-3inq.onrender.com', 'centure-dashboard-n7otet5i5-ved-sumt.vercel.app']
+
 INSTALLED_APPS = [
     "django.contrib.admin",
     "django.contrib.auth",
@@ -101,18 +105,18 @@ WSGI_APPLICATION = "config.wsgi.application"
 #         }
 #     }
 # else:
-#   DATABASES = {
+#     DATABASES = {
 #         "default": {
 #             "ENGINE": "django.db.backends.sqlite3",
 #             "NAME": BASE_DIR / "db.sqlite3",
 #         }
 #     }
 
- DATABASES = {
-     "default": dj_database_url.config(
-         conn_max_age=60,
-     )
- }
+DATABASES = {
+    "default": dj_database_url.config(
+        conn_max_age=60,
+    )
+}
 
 AUTH_USER_MODEL = "users.User"
 
@@ -184,10 +188,10 @@ CORS_ALLOWED_ORIGINS = [
         "http://localhost:3100,http://localhost:8081"
     ).split(",") if o
 ]
+
 # ---------------------------------------------------------------------------
 # Celery
 # ---------------------------------------------------------------------------
-import sys
 
 _IN_PYTEST = "pytest" in sys.modules or env_bool("CELERY_TASK_ALWAYS_EAGER", "false")
 CELERY_BROKER_URL = os.environ.get("REDIS_URL", "redis://localhost:6379/0")
