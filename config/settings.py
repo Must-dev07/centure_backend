@@ -88,31 +88,31 @@ WSGI_APPLICATION = "config.wsgi.application"
 # Database: PostgreSQL in docker-compose / production, SQLite fallback for
 # lightweight local test runs (pytest uses SQLite unless POSTGRES_HOST is set).
 
-if os.environ.get("POSTGRES_HOST"):
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.postgresql",
-            "NAME": os.environ.get("POSTGRES_DB", "belt"),
-            "USER": os.environ.get("POSTGRES_USER", "belt"),
-            "PASSWORD": os.environ.get("POSTGRES_PASSWORD", ""),
-            "HOST": os.environ["POSTGRES_HOST"],
-            "PORT": os.environ.get("POSTGRES_PORT", "5432"),
-            "CONN_MAX_AGE": 60,
-        }
-    }
-else:
-    DATABASES = {
-        "default": {
-            "ENGINE": "django.db.backends.sqlite3",
-            "NAME": BASE_DIR / "db.sqlite3",
-        }
-    }
+# if os.environ.get("POSTGRES_HOST"):
+#     DATABASES = {
+#         "default": {
+#             "ENGINE": "django.db.backends.postgresql",
+#             "NAME": os.environ.get("POSTGRES_DB", "belt"),
+#             "USER": os.environ.get("POSTGRES_USER", "belt"),
+#             "PASSWORD": os.environ.get("POSTGRES_PASSWORD", ""),
+#             "HOST": os.environ["POSTGRES_HOST"],
+#             "PORT": os.environ.get("POSTGRES_PORT", "5432"),
+#             "CONN_MAX_AGE": 60,
+#         }
+#     }
+# else:
+#   DATABASES = {
+#         "default": {
+#             "ENGINE": "django.db.backends.sqlite3",
+#             "NAME": BASE_DIR / "db.sqlite3",
+#         }
+#     }
 
-# DATABASES = {
-#     "default": dj_database_url.config(
-#         conn_max_age=60,
-#     )
-# }
+ DATABASES = {
+     "default": dj_database_url.config(
+         conn_max_age=60,
+     )
+ }
 
 AUTH_USER_MODEL = "users.User"
 
