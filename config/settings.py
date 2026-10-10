@@ -30,7 +30,7 @@ ALLOWED_HOSTS = [h.strip() for h in _hosts_env.split(",") if h.strip()]
 
 # optional: always allow localhost for local dev (10.0.2.2 = the host PC as
 # seen from the Android emulator)
-ALLOWED_HOSTS += ['localhost', '127.0.0.1', '10.0.2.2', 'centure-backend-3inq.onrender.com', 'centure-dashboard-n7otet5i5-ved-sumt.vercel.app']
+ALLOWED_HOSTS += ['localhost', '127.0.0.1', '10.0.2.2', 'centure-backend-3inq.onrender.com', 'https://centure-dashboard-nv1lh7pqj-ved-sumt.vercel.app']
 
 INSTALLED_APPS = [
     "django.contrib.admin",
